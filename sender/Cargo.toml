@@ -1,0 +1,10 @@
+[package]
+name = "sender"
+version = "0.1.0"
+authors = ["Nikola Whallon <nikola@deepgram.com>"]
+
+[dependencies]
+actix = "0.7"
+actix-web = "0.7"
+env_logger = "0.5.13"
+futures-await = "0.1.1"
