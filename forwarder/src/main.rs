@@ -10,6 +10,7 @@ use actix_web::{ws, middleware, server, App, Error, HttpRequest, HttpResponse};
 use actix_web::http::header;
 use futures::prelude::{async, await};
 use futures::Future;
+use futures::Stream;
 
 mod utils;
 
@@ -23,7 +24,7 @@ fn ws_index(req: HttpRequest) -> Box<Future<Item = HttpResponse, Error = Error>>
 }
 
 struct Forwarder {
-    reader: ws::ClientReader,
+    reader: Option<ws::ClientReader>,
     writer: ws::ClientWriter,
 }
 
@@ -31,6 +32,7 @@ impl Actor for Forwarder {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.add_stream(self.reader.take().unwrap().map(FromEcho));
         println!("Forwarder Actor started");
     }
 }
@@ -44,6 +46,30 @@ impl StreamHandler<ws::Message, ws::ProtocolError> for Forwarder {
             ws::Message::Ping(msg) => self.writer.ping(&msg),
             ws::Message::Pong(msg) => self.writer.pong(&msg),
             ws::Message::Close(reason) => self.writer.close(reason),
+        }
+    }
+}
+
+struct FromEcho(ws::Message);
+
+impl FromEcho {
+    pub fn into_inner(self) -> ws::Message {
+        self.0
+    }
+}
+
+impl Message for FromEcho {
+    type Result = ();
+}
+
+impl StreamHandler<FromEcho, ws::ProtocolError> for Forwarder {
+    fn handle(&mut self, msg: FromEcho, ctx: &mut Self::Context) {
+        match msg.into_inner() {
+            ws::Message::Text(text) => ctx.text(text),
+            ws::Message::Binary(bin) => ctx.binary(bin),
+            ws::Message::Ping(msg) => ctx.ping(&msg),
+            ws::Message::Pong(msg) => ctx.pong(&msg),
+            ws::Message::Close(reason) => ctx.close(reason),
         }
     }
 }
@@ -63,7 +89,7 @@ impl Forwarder {
         let (reader, writer) = fut_reader_writer.unwrap(); // will panic if unable to get the reader and writer
 
         let result = Self {
-            reader,
+            reader: Some(reader),
             writer,
         };
 
